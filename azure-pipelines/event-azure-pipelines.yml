@@ -1,0 +1,68 @@
+# Azure Pipeline for Event Resource Validation
+# Triggers on changes to event related files
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - tests/event/**
+    - src/event/**  # Adjust to your actual source paths
+    - pipelines/event-validation.yml
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  PYTHON_VERSION: '3.11'
+  RESOURCE_NAME: 'event'
+
+stages:
+- stage: ValidateEvent
+  displayName: 'Validate Event API'
+  jobs:
+  - job: RunTests
+    displayName: 'Run Event Validation Tests'
+    steps:
+    
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(PYTHON_VERSION)'
+      displayName: 'Use Python $(PYTHON_VERSION)'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      displayName: 'Install dependencies'
+
+    - script: |
+        pytest tests/event/ -v \
+          --junitxml=test-results-event.xml \
+          --html=test-report-event.html \
+          --self-contained-html
+      env:
+        BASE_URL: $(QA_BASE_URL)
+        CLIENT_ID: $(QA_CLIENT_ID)
+        CLIENT_SECRET: $(QA_CLIENT_SECRET)
+        TOKEN_URL: $(QA_TOKEN_URL)
+        SCOPE: $(QA_SCOPE)
+        PROGRAM_ID: $(QA_PROGRAM_ID)
+        EVENT_ID: $(QA_EVENT_ID)
+      displayName: 'Run Event API validation tests'
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFiles: 'test-results-event.xml'
+        testRunTitle: 'Event API Validation'
+        failTaskOnFailedTests: true
+      condition: succeededOrFailed()
+      displayName: 'Publish test results'
+
+    - task: PublishHtmlReport@1
+      inputs:
+        reportDir: '.'
+        tabName: 'Event API Report'
+      condition: succeededOrFailed()
+      displayName: 'Publish HTML test report'

@@ -1,0 +1,50 @@
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - tests/test_pretest_references/**
+    - tests/shared/**
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  pythonVersion: '3.11'
+
+jobs:
+- job: TestPretestReferencesValidation
+  displayName: 'Test Pretest References API Validation'
+  
+  steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '$(pythonVersion)'
+    displayName: 'Use Python $(pythonVersion)'
+
+  - script: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+    displayName: 'Install dependencies'
+
+  - script: |
+      pytest tests/test_pretest_references/ -v --junitxml=test-results.xml
+    displayName: 'Run Test Pretest References tests'
+    env:
+      API_BASE_URL: $(QA_API_BASE_URL)
+      API_TOKEN: $(QA_API_TOKEN)
+
+  - task: PublishTestResults@2
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFiles: 'test-results.xml'
+      testRunTitle: 'Test Pretest References API Tests'
+
+  - script: |
+      if [ $? -ne 0 ]; then
+        echo "##vso[task.logissue type=error]Test Pretest References API validation failed - blocking deployment"
+        exit 1
+      fi
+    displayName: 'Validate test results'
