@@ -1,0 +1,43 @@
+trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  BASE_URL: 'https://api.example.com'     # override per env
+  OPENAPI_PATH: 'schema/openapi.json'     # path in this repo
+  # Add these as **secret** variables in ADO Library/Variables:
+  # TENANT_ID, CLIENT_ID, CLIENT_SECRET, SCOPE
+  # Or use TOKEN_URL instead of TENANT_ID/SCOPE.
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.11'
+
+  - script: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+      mkdir -p reports
+    displayName: 'Install deps'
+
+  - script: |
+      pytest --junitxml=reports/junit.xml
+    env:
+      BASE_URL: $(BASE_URL)
+      OPENAPI_PATH: $(OPENAPI_PATH)
+      TENANT_ID: $(TENANT_ID)
+      CLIENT_ID: $(CLIENT_ID)
+      CLIENT_SECRET: $(CLIENT_SECRET)
+      SCOPE: $(SCOPE)
+      TOKEN_URL: $(TOKEN_URL)
+      # STATIC_TOKEN: $(STATIC_TOKEN)   # optional for debugging
+    displayName: 'Run Schemathesis tests'
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFiles: 'reports/junit.xml'
+      testResultsFormat: 'JUnit'
+      failTaskOnFailedTests: true
+    displayName: 'Publish JUnit'
