@@ -7,6 +7,8 @@ trigger:
     include:
     - tests/examinee/**
     - tests/shared/**
+    # Consolidated sub-resource paths (now tested in main examinee pipeline)
+    # Previously: tests/event_examinee/**, tests/examinee_audit/**, tests/examinee_record/**
 
 pool:
   vmImage: 'ubuntu-latest'

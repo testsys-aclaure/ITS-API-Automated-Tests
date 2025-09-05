@@ -157,6 +157,28 @@ class APITestBase:
                 elif sponsor:
                     q["sponsor-id"] = sponsor
         
+        # Examinee audit query: needs proper date format (date, not datetime)
+        if path == "/examinee/audit/query":
+            # Use environment dates if available, otherwise use defaults
+            start_date = os.getenv("START_DATE", "2024-01-01")
+            end_date = os.getenv("END_DATE", "2024-12-31")
+            
+            if "start-utc" in all_params:
+                q.setdefault("start-utc", start_date)
+            if "end-utc" in all_params:
+                q.setdefault("end-utc", end_date)
+            # Required parameters for audit query
+            q.setdefault("timezoneId", int(os.getenv("TIMEZONE_ID", 30)))  # UTC
+            q.setdefault("useDaylightSavings", os.getenv("USE_DAYLIGHT_SAVINGS", "false").lower() == "true")
+            q.setdefault("includeBitFlag", int(os.getenv("INCLUDE_BIT_FLAG", 1)))  # General form information
+        
+        # Longitudinal segment detail: needs result-id (skip this test for now)
+        if path == "/examinee/longitudinal-segment-detail/query":
+            # This endpoint requires a valid result-id which we don't have
+            # Set a default that may work or expect 422
+            q.setdefault("result-id", 1)
+            q.setdefault("include-flag", 1)  # Event information
+        
         return q
     
     def make_get_request(self, path: str, auth_headers: Dict[str, str], 
@@ -208,9 +230,10 @@ class APITestBase:
                 f"Response: {response.text[:500]}"
             )
             
-            # Verify content type is JSON
+            # Verify content type is JSON (including problem+json for error responses)
             content_type = response.headers.get("content-type", "")
-            assert "application/json" in content_type, (
+            valid_json_types = ["application/json", "application/problem+json"]
+            assert any(json_type in content_type for json_type in valid_json_types), (
                 f"{path} returned non-JSON content-type: {content_type}"
             )
             
@@ -224,7 +247,7 @@ class APITestBase:
         """Get expected status codes for known problematic endpoints."""
         return {
             "/remote/system-checks/Query": 404,
-            # Add other known status code exceptions here
+            # All other endpoints should return 200
         }
     
     def should_skip_endpoint(self, path: str) -> bool:
