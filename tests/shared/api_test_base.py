@@ -1,10 +1,13 @@
 """Shared base class for API testing with common utilities."""
 
+
 import os
 import json
 import pytest
 import requests
 from typing import Dict, Any, List, Optional
+import schemathesis
+from schemathesis import openapi as st_openapi
 
 # Load environment variables
 try:
@@ -16,6 +19,8 @@ except ImportError:
 class APITestBase:
     """Base class for API endpoint testing with shared utilities."""
     
+    st_schema = None  # Schemathesis schema object for validation
+
     @classmethod
     def setup_class(cls):
         """Class-level setup for API testing."""
@@ -23,6 +28,8 @@ class APITestBase:
         cls.openapi_path = os.getenv("OPENAPI_PATH", "schema/openapi.json")
         cls.program_id = os.getenv("PROGRAM_ID")
         cls.spec = cls._load_openapi_spec()
+        if cls.st_schema is None:
+            cls.st_schema = st_openapi.from_path(cls.openapi_path)
     
     @classmethod 
     def _load_openapi_spec(cls) -> Dict[str, Any]:
@@ -220,28 +227,35 @@ class APITestBase:
         except requests.exceptions.RequestException as e:
             pytest.fail(f"POST request failed for {path}: {e}")
     
-    def assert_response_success(self, response: requests.Response, path: str, 
-                              expected_status: int = 200):
-        """Assert that the response is successful."""
+    def assert_response_success(self, response: requests.Response, path: str, expected_status: int = 200, method: str = "POST"):
+        """Assert that the response is successful and matches the OpenAPI schema."""
         try:
             # Check status code
             assert response.status_code == expected_status, (
                 f"{path} returned {response.status_code}, expected {expected_status}. "
                 f"Response: {response.text[:500]}"
             )
-            
             # Verify content type is JSON (including problem+json for error responses)
             content_type = response.headers.get("content-type", "")
             valid_json_types = ["application/json", "application/problem+json"]
             assert any(json_type in content_type for json_type in valid_json_types), (
                 f"{path} returned non-JSON content-type: {content_type}"
             )
-            
             # Verify response can be parsed as JSON
             response.json()
-            
+            # --- Schema validation ---
+            # Remove query string from path if present
+            clean_path = path.split("?")[0]
+            # Schemathesis expects method in lowercase
+            cls = self.__class__
+            if cls.st_schema is None:
+                cls.st_schema = st_openapi.from_path(cls.openapi_path)
+            st_endpoint = cls.st_schema[clean_path][method.lower()]
+            st_endpoint.validate_response(response)
         except requests.exceptions.JSONDecodeError:
             pytest.fail(f"{path} returned invalid JSON: {response.text[:500]}")
+        except Exception as e:
+            pytest.fail(f"{path} schema validation failed: {e}\nResponse: {response.text[:500]}")
     
     def get_expected_status_codes(self) -> Dict[str, int]:
         """Get expected status codes for known problematic endpoints."""
